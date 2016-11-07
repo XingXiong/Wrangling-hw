@@ -1,0 +1,185 @@
+---
+title: "Xiong_week_04"
+author: "Xing Xiong"
+date: "2016Äê10ÔÂ22ÈÕ"
+output: html_document
+---
+1.
+To redo the first problem in homework3.I try to avoid using join function unless it is necessary.
+Firstly,I build two dataframes which contain people who were born between 1890 and 1990.And I calculate the ratio of babies' names.
+```{r}
+library(plyr)
+library(Lahman)
+library(tidyverse)
+library(babynames)
+
+F1 <- Fielding %>%
+group_by(playerID) %>%
+summarise(
+Gtotal = sum(G)
+)
+F1
+Field <- filter(F1, Gtotal>200)
+
+playername <- inner_join(Field,Master,by = "playerID")
+dfb <- filter(playername,birthYear>1889 & birthYear<1991) %>%
+group_by(nameFirst,birthYear) %>%
+summarise()
+colnames(dfb) <- c("name","year")
+
+malebaby <- filter(babynames,sex == "M" & year>1889 & year<1991)
+malebaby <- select(malebaby, -sex)
+malebaby <- select(malebaby, -prop)
+
+malebabysum <- malebaby %>%
+group_by(year) %>%
+summarise(
+sum=sum(n,na.rm = TRUE)
+)
+finalbaby<-left_join(malebaby,malebabysum,by = "year")
+
+finalbaby$ratio<-finalbaby$n/finalbaby$sum
+```
+In order to calculate the ratio of baseball players' names.I count the names of each year and compute the ratio.
+```{r}
+dfb$n <- 1
+dfbsum <- dfb %>%
+group_by(year) %>%
+summarise(
+sum=sum(n,na.rm = TRUE)
+)
+finaldfb <- left_join(dfb,dfbsum,by = "year")
+finaldfb$ratio <- finaldfb$n/finaldfb$sum 
+```
+
+And I want to combine these two dataframes so I add a variable "type" to distinguish their source.Using function rbind and running function for to plot all the images.
+
+```{r}
+finaldfb$type <- c("baseball")
+finalbaby$type <- c("baby")
+name1<-data.frame(name = c("James","John","Michael","Robert","William","Joe","Bob","Mike","Bill","Jim"))
+name1$name <- as.character(name1$name)
+printbaby <- left_join(name1,finalbaby,by = "name")
+printdfb <- left_join(name1,finaldfb,by = "name")
+
+forplot <- rbind(printdfb,printbaby)
+
+for (i in c("James","John","Michael","Robert","William","Joe","Bob","Mike","Bill","Jim")){
+print(ggplot(data = filter(forplot,name == i)) + geom_line(mapping = aes(year,ratio,colour = type)) + labs(title = i))
+}
+```
+
+2.
+The main task of this problem is to remove the "-" in the phone numbers.And according to the professor's solution to the homework in last week.I revise some parts to make it correct.
+It is really hard to do it efficiently.Especially when I first ran R,it took me a few minutes to run all the program.But after one hour or more,it took me twenty minutes to finish the same program.But the good news is that there are more numbers of each license catagory compared to the result in homework3
+
+```{r}
+library(stringr)
+restaurant <-read_csv("https://nycopendata.socrata.com/api/views/xx67-kt59/rows.csv?accessType=DOWNLOAD")
+restaurant$PHONE <- as.character(restaurant$PHONE) 
+restaurant$`INSPECTION DATE` <- as.Date(restaurant$`INSPECTION DATE` ,"%m/%d/%Y")
+recentdate <- restaurant %>%
+    select(CAMIS, `INSPECTION DATE`)
+recentdate1 <- ddply(recentdate, "CAMIS",summarize, max=max(`INSPECTION DATE`)) 
+phonenum <- restaurant %>%
+    select(CAMIS,PHONE)
+finalrestaurant <- left_join(recentdate1, phonenum, by=c("CAMIS"="CAMIS"))%>%
+  group_by(CAMIS)%>%
+  slice(1)%>%
+  filter(max != "1900-01-01")
+phone <- "[-]?"
+finalrestaurant$POHNE <- gsub(phone,"",finalrestaurant$PHONE)
+
+finalphone <- inner_join(recentdate,phonenum,by = "CAMIS")
+
+business <- read_csv("https://nycopendata.socrata.com/api/views/w7w3-xahh/rows.csv?accessType=DOWNLOAD")
+
+business$`Contact Phone Number` <- gsub(phone,"",business$`Contact Phone Number`)
+business$PHONE <-business$`Contact Phone Number`
+business<-select(business,-`Contact Phone Number`)
+
+business1 <- business %>%
+select (PHONE,`License Category`)
+sharenum<-inner_join(finalphone,business1,by="PHONE") %>%
+group_by(CAMIS) %>%
+  slice(1) %>%
+  filter(`License Category` != "NA")
+head(sort(table(sharenum$`License Category`),decreasing=TRUE),10)
+```
+
+
+3.
+Some there are some small mistakes in the code from the website.
+```{r}
+library(curl)
+menu_data_url <- "https://s3.amazonaws.com/menusdata.nypl.org/gzips/2016_09_16_07_00_30_data.tgz"
+temp_dir <- tempdir()
+curl_download(menu_data_url, file.path(temp_dir, "menu_data.tgz"))
+untar(file.path(temp_dir, "menu_data.tgz"), exdir = temp_dir)
+dish <- read_csv(file.path(temp_dir, "Dish.csv"))
+menu <- read_csv(file.path(temp_dir, "Menu.csv"))
+menu_item <- read_csv(file.path(temp_dir, "MenuItem.csv"))
+menu_page <- read_csv(file.path(temp_dir, "MenuPage.csv"))
+dish$dish_name <- dish$name
+d <- menu_item %>% select( id, menu_page_id, dish_id, price) %>%
+  left_join(dish %>% select(id, dish_name),
+            by = c("dish_id" = "id")) %>%
+  left_join(menu_page %>% select(id, menu_id),
+            by = c("menu_page_id" = "id")) %>%
+  left_join(menu %>% select(id, date, place, location),
+            by = c("menu_id" = "id")) %>%
+  mutate(year = lubridate::year(date)) %>%
+  filter(!is.na(year)) %>%
+  filter(year > 1800 & year <= 2016) %>%
+  select(year, location, menu_id, dish_name, price, place)
+d$decennium = floor(d$year / 10) * 10
+ggplot(d, aes(year)) +
+  geom_histogram(binwidth = 5, center = 1902.5, color = "black", fill = "lightblue") +
+  scale_y_continuous("N.o. menu items")
+```
+
+
+```{r}
+
+foods <- c("coffee", "tea", "pancake", "ice cream", "french frie",
+           "french peas", "apple", "banana", "strawberry")
+
+food_over_time <- map_df(foods, function(food) {
+  d %>%
+    filter(year >= 1900 & year <= 1980) %>%
+    group_by(decennium, menu_id) %>%
+    summarise(contains_food =
+      any(str_detect(dish_name, regex(paste0("\\b", food), ignore_case = TRUE)),
+          na.rm = TRUE)) %>%
+    summarise(prop_food = mean(contains_food, na.rm = TRUE)) %>%
+    mutate(food = food)
+})
+
+food_time_plot <- list(
+  geom_line(),
+  geom_point(),
+  scale_y_continuous("% of menus include",labels = scales::percent,
+                     limits = c(0, NA)),
+  scale_x_continuous(""),
+  facet_wrap(~ food),
+  theme_minimal(),
+  theme(legend.position = "none"))
+
+food_over_time %>% filter(food %in% c("coffee", "tea")) %>%
+  ggplot(aes(decennium, prop_food, color = food)) + food_time_plot
+```
+
+I am trying to explore something interesting.But some data in the "price" column are missing.Fortunately,we can find the relationship between the popularity of dishes and the meanprice of dishes from part of the plot.Especially apple and french peas,the mean price of apple and french peas have the same variation trend with their percentage of menus include from 1900 to 1920.
+```{r}
+meanprice1 <- filter(d,price > 0) 
+meanprice1 <- meanprice1 %>%
+group_by(year,dish_name) %>%
+summarise(meanprice=mean(price))
+meanprice2 <- filter(meanprice1,dish_name == "coffee"|dish_name == "tea"|dish_name == "pancake"|dish_name == "ice cream"|dish_name == "french frie"|dish_name == "french peas"|dish_name == "apple"|dish_name == "banana"|dish_name == "strawberry") 
+plot <- ggplot(data = meanprice2)+geom_line(mapping = aes(year,meanprice,colour=dish_name))
+plot
+
+food_over_time %>% filter(food %in% c("apple", "french peas")) %>%
+  ggplot(aes(decennium, prop_food, color = food)) + food_time_plot
+```
+
